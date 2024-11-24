@@ -1,0 +1,116 @@
+import cv2
+import numpy as np
+import heapq
+import matplotlib.pyplot as plt
+
+def load_map(pgm_file, yaml_file):
+    # Load the map as a grayscale image
+    img = cv2.imread(pgm_file, cv2.IMREAD_GRAYSCALE)
+
+    # Convert the image to a binary grid (0 = free space, 1 = obstacle)
+    _, binary_map = cv2.threshold(img, 200, 1, cv2.THRESH_BINARY_INV)
+
+    # Load metadata from the YAML file
+    with open(yaml_file, 'r') as file:
+        data = file.readlines()
+
+    resolution = float([line for line in data if 'resolution' in line][0].split(': ')[1].strip())
+    origin = [float(val) for val in [line for line in data if 'origin' in line][0].split(': ')[1].strip()[1:-1].split(',')]
+
+    return binary_map, resolution, origin
+
+def dijkstra(grid, start, goal):
+    rows, cols = grid.shape
+    visited = set()
+    priority_queue = [(0, start)]  # (cost, (x, y))
+    distances = {start: 0}
+    previous_nodes = {start: None}
+
+    # Define the 8 directions: up, down, left, right, and diagonals
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
+
+    while priority_queue:
+        current_cost, current_node = heapq.heappop(priority_queue)
+
+        if current_node == goal:
+            break
+
+        if current_node in visited:
+            continue
+
+        visited.add(current_node)
+
+        x, y = current_node
+        for dx, dy in directions:
+            neighbor = (x + dx, y + dy)
+            if 0 <= neighbor[0] < rows and 0 <= neighbor[1] < cols and grid[neighbor[0], neighbor[1]] == 0:
+                # Set cost as 1 for orthogonal moves and √2 for diagonal moves
+                move_cost = np.sqrt(2) if dx != 0 and dy != 0 else 1
+                new_cost = current_cost + move_cost
+                if neighbor not in distances or new_cost < distances[neighbor]:
+                    distances[neighbor] = new_cost
+                    previous_nodes[neighbor] = current_node
+                    heapq.heappush(priority_queue, (new_cost, neighbor))
+
+    # Reconstruct the path
+    path = []
+    current = goal
+
+    # Check if the goal is reachable
+    if goal not in previous_nodes:
+        print("Path not reachable")
+    else:
+        while current is not None:
+            path.append(current)
+            current = previous_nodes[current]
+        path.reverse()
+
+    return path, distances[goal] if goal in distances else float('inf')
+
+def main():
+    # Load the map and convert it to a grid
+    map_grid, resolution, origin = load_map('/home/dhanush/ros2_ws/src/agvrobot_description/agvrobot_description/maze.pgm',
+                                             '/home/dhanush/ros2_ws/src/agvrobot_description/agvrobot_description/maze.yaml')
+
+    # Print the map grid for reference
+    print("Map grid (0 = free space, 1 = obstacle):")
+    print(map_grid)
+
+    # Set the start and goal positions based on your inspection
+    start = (5, 10)  # Set these based on your map
+    goal = (250, 250)  # Set these based on your map
+
+    # Verify if start and goal positions are valid
+    if map_grid[start] != 0:
+        print(f"Start position {start} is blocked!")
+    if map_grid[goal] != 0:
+        print(f"Goal position {goal} is blocked!")
+
+    # Run Dijkstra's algorithm on the map
+    path, cost = dijkstra(map_grid, start, goal)
+
+    # Display the results
+    if path:
+        print("Path:", path)
+        print("Cost:", cost)
+    else:
+        print("Goal not reachable")
+        path = []  # Reset path if not reachable
+
+    # Visualize the path
+    plt.imshow(map_grid, cmap='gray')
+
+    if path:
+        path_x, path_y = zip(*path)
+        plt.plot(path_y, path_x, color='red', marker='o')  # Mark the path with red circles
+
+    # Mark start and goal points in the visualization
+    plt.scatter(start[1], start[0], color='green', s=100, label='Start')  # Start point
+    plt.scatter(goal[1], goal[0], color='blue', s=100, label='Goal')      # Goal point
+    plt.title("Dijkstra Path on Maze")
+    plt.legend()
+    plt.show()
+
+if __name__ == "__main__":
+    main()
+    
